@@ -45,7 +45,7 @@
     fprintf(stderr, "Usage: iphonesim <options> <command> ...\n");
     fprintf(stderr, "Commands:\n");
     fprintf(stderr, "  showsdks\n");
-    fprintf(stderr, "  launch <application path> [sdkversion] [family] [uuid]\n");
+    fprintf(stderr, "  launch [ENVIRONMENT_VARIABLE=VALUE ...] <application path> [sdkversion] [family] [uuid]\n");
 }
 
 
@@ -86,7 +86,7 @@
 /**
  * Launch the given Simulator binary.
  */
-- (int) launchApp: (NSString *) path withFamily:(NSString*)family uuid:(NSString*)uuid{
+- (int) launchApp:(NSString *) path withEnvironment:(NSDictionary *)environment withFamily:(NSString*)family uuid:(NSString*)uuid{
     DTiPhoneSimulatorApplicationSpecifier *appSpec;
     DTiPhoneSimulatorSessionConfig *config;
     DTiPhoneSimulatorSession *session;
@@ -111,7 +111,7 @@
     [config setSimulatedApplicationShouldWaitForDebugger: NO];
 
     [config setSimulatedApplicationLaunchArgs: [NSArray array]];
-    [config setSimulatedApplicationLaunchEnvironment: [NSDictionary dictionary]];
+    [config setSimulatedApplicationLaunchEnvironment: environment];
 
     [config setLocalizedClientName: @"TitaniumDeveloper"];
 
@@ -157,24 +157,39 @@
  * Execute 'main'
  */
 - (void) runWithArgc: (int) argc argv: (char **) argv {
+	int main_argc = argc;
+	char **main_argv = argv;
+	int envc = 0;
+	char **envv = argv;
+	envv++;
+
+	for (int i = 1; i < argc; i++) {
+		if (strchr(argv[i], '=') == NULL)
+			break;
+
+		envc++;
+		main_argc--;
+		main_argv++;
+	}
+
     /* Read the command */
-    if (argc < 2) {
+    if (main_argc < 2) {
         [self printUsage];
         exit(EXIT_FAILURE);
     }
 
-    if (strcmp(argv[1], "showsdks") == 0) {
+    if (strcmp(main_argv[1], "showsdks") == 0) {
         exit([self showSDKs]);
     }
-    else if (strcmp(argv[1], "launch") == 0) {
+    else if (strcmp(main_argv[1], "launch") == 0) {
         /* Requires an additional argument */
-        if (argc < 3) {
+        if (main_argc < 3) {
             fprintf(stderr, "Missing application path argument\n");
             [self printUsage];
             exit(EXIT_FAILURE);
         }
-        if (argc > 3) {
-            NSString* ver = [NSString stringWithCString:argv[3] encoding:NSUTF8StringEncoding];
+        if (main_argc > 3) {
+            NSString* ver = [NSString stringWithCString:main_argv[3] encoding:NSUTF8StringEncoding];
             NSArray *roots = [DTiPhoneSimulatorSystemRoot knownRoots];
             for (DTiPhoneSimulatorSystemRoot *root in roots) {
                 NSString *v = [root sdkVersion];
@@ -186,7 +201,7 @@
             }
             if (sdkRoot == nil)
             {
-                fprintf(stderr,"Unknown or unsupported SDK version: %s\n",argv[3]);
+                fprintf(stderr,"Unknown or unsupported SDK version: %s\n", main_argv[3]);
                 [self showSDKs];
                 exit(EXIT_FAILURE);
             }
@@ -198,15 +213,23 @@
         /* Don't exit, adds to runloop */
 		NSString *family = nil;
 		NSString *uuid = nil;
-		if (argc > 4)
+		if (main_argc > 4)
 		{
-			family = [NSString stringWithUTF8String:argv[4]];
+			family = [NSString stringWithUTF8String:main_argv[4]];
 		}
-		if (argc > 5)
+		if (main_argc > 5)
 		{
-			uuid = [NSString stringWithUTF8String:argv[5]];
+			uuid = [NSString stringWithUTF8String:main_argv[5]];
 		}
-        [self launchApp: [NSString stringWithUTF8String: argv[2]] withFamily:family uuid:uuid];
+		
+		NSMutableDictionary *environment = [NSMutableDictionary dictionaryWithCapacity: envc];
+		for (int i = 0; i < envc; i++) {
+			NSString *arg = [NSString stringWithCString:envv[i] encoding:NSUTF8StringEncoding];
+			NSArray *parts = [arg componentsSeparatedByString:@"="];
+
+			[environment setObject:[parts objectAtIndex:1] forKey:[parts objectAtIndex:0]];
+		}
+        [self launchApp: [NSString stringWithUTF8String: main_argv[2]] withEnvironment:environment withFamily:family uuid:uuid];
     } else {
         fprintf(stderr, "Unknown command\n");
         [self printUsage];
